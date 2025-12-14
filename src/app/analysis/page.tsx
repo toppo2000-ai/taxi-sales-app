@@ -1,12 +1,28 @@
 // src/app/analysis/page.tsx
-export const dynamic = 'force-dynamic';
-
 "use client";
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { supabase } from '../../../utils/supabase'; 
-import { BarChart, ArrowLeft, Clock, DollarSign, ListChecks, Calendar, Sunrise, Sunset, FileText } from 'lucide-react';
-import Link from 'next/link';
+export const dynamic = "force-dynamic";
+
+import React, {
+  useState,
+  useEffect,
+  useCallback,
+  useMemo,
+} from "react";
+import { supabase } from "../../../utils/supabase";
+import {
+  BarChart,
+  ArrowLeft,
+  Clock,
+  DollarSign,
+  ListChecks,
+  Calendar,
+  Sunrise,
+  Sunset,
+  FileText,
+} from "lucide-react";
+import Link from "next/link";
+
 
 // ★★★ データ型定義 ★★★
 interface Shift {
