@@ -24,7 +24,7 @@ import {
     Smartphone,
     Ticket,
     Wallet,
-    ListChecks // 以前修正した、欠落していたインポート
+    ListChecks // 欠落していたインポート
 } from 'lucide-react';
 
 // =================================================================
@@ -93,9 +93,12 @@ export default function Home() {
     const [supabase, setSupabase] = useState<ReturnType<typeof getSupabaseClient>>(null);
     const [currentShift, setCurrentShift] = useState<Shift | null>(null);
     const [sales, setSales] = useState<Sale[]>([]);
-    const [targetInput, setTargetInput] = useState<string>('30000'); // 目標金額の入力値
+    const [targetInput, setTargetInput] = useState<string>('30000'); // 日次目標金額の入力値
     const [isLoading, setIsLoading] = useState(true);
     const [monthlySummary, setMonthlySummary] = useState<MonthlySummary>({ totalSales: 0, totalRides: 0 });
+    
+    // ★ 修正点1: 月間目標値をStateとして管理
+    const [monthlyTargetValue, setMonthlyTargetValue] = useState<number>(600000); 
 
     // モーダル管理
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -104,6 +107,8 @@ export default function Home() {
     const [saleToDelete, setSaleToDelete] = useState<Sale | null>(null);
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
     const [saleToEdit, setSaleToEdit] = useState<Sale | null>(null);
+    // ★ 修正点1: 月間目標設定モーダルのState
+    const [isMonthlyTargetModalOpen, setIsMonthlyTargetModalOpen] = useState(false);
 
     // Supabaseクライアントの初期化 (Client Componentでのみ実行)
     useEffect(() => {
@@ -298,12 +303,10 @@ export default function Home() {
     }, [currentShift, shiftSummary.totalSales]);
 
     // 月間サマリー計算
-    // 【以前の修正箇所】: number 型を明示的に指定してTSエラーを解消
-    const monthlyTarget: number = 600000; // 例として固定値
     const monthlyAchievementPercentage = useMemo(() => {
-        if (monthlyTarget === 0) return 0 
-        return Math.min(100, Math.round((monthlySummary.totalSales / monthlyTarget) * 100));
-    }, [monthlySummary.totalSales, monthlyTarget]);
+        if (monthlyTargetValue === 0) return 0 
+        return Math.min(100, Math.round((monthlySummary.totalSales / monthlyTargetValue) * 100));
+    }, [monthlySummary.totalSales, monthlyTargetValue]);
 
     // 月間集計期間の表示 (仮)
     const monthStart = new Date();
@@ -332,7 +335,11 @@ export default function Home() {
                     TaxiApp
                 </div>
                 <div className="flex space-x-3 text-sm">
-                    <button className="flex items-center text-gray-400 hover:text-white transition">
+                    {/* ★ 修正点2: 目標ボタンにonClickハンドラを追加 */}
+                    <button 
+                        onClick={() => setIsMonthlyTargetModalOpen(true)}
+                        className="flex items-center text-gray-400 hover:text-white transition"
+                    >
                         <Target size={16} className="mr-1" /> 目標
                     </button>
                     <Link href="/analysis" className="flex items-center text-gray-400 hover:text-white transition">
@@ -344,7 +351,7 @@ export default function Home() {
             {/* 月間サマリーセクション */}
             <MonthlySummaryCard 
                 monthlySummary={monthlySummary} 
-                monthlyTarget={monthlyTarget} 
+                monthlyTarget={monthlyTargetValue} // Stateを使用
                 achievementPercentage={monthlyAchievementPercentage}
                 monthRange={monthRange}
             />
@@ -452,6 +459,14 @@ export default function Home() {
                 onClose={() => setIsEndModalOpen(false)}
                 onEnd={endShift}
                 summary={shiftSummary}
+            />
+
+            {/* ★ 修正点3: 月間目標設定モーダルをレンダリングに追加 */}
+            <MonthlyTargetModal
+                isOpen={isMonthlyTargetModalOpen}
+                onClose={() => setIsMonthlyTargetModalOpen(false)}
+                onTargetChange={setMonthlyTargetValue} 
+                currentTarget={monthlyTargetValue}
             />
         </div>
     );
@@ -615,7 +630,7 @@ const LatestSalesHistory: React.FC<{
 };
 
 
-// 汎用モーダルコンポーネント
+// 汎用モーダルコンポーネント (画面中央配置)
 const Modal: React.FC<{ isOpen: boolean; onClose: () => void; children: React.ReactNode }> = ({ isOpen, onClose, children }) => {
     if (!isOpen) return null;
     return (
@@ -884,11 +899,77 @@ const EndShiftModal: React.FC<{
     );
 };
 
+
 // =================================================================
-// ★ KeypadModal コンポーネント (復元/仮定義)
+// ★ 月間目標設定モーダル (MonthlyTargetModal)
 // =================================================================
 
-// ユーザーの要望により復元された、キーパッド入力用のモーダル
+const MonthlyTargetModal: React.FC<{
+    isOpen: boolean;
+    onClose: () => void;
+    onTargetChange: (newTarget: number) => void; 
+    currentTarget: number;
+}> = ({ isOpen, onClose, onTargetChange, currentTarget }) => {
+    const [input, setInput] = useState(currentTarget.toString());
+
+    useEffect(() => {
+        if (isOpen) {
+            setInput(currentTarget.toString());
+        }
+    }, [isOpen, currentTarget]);
+
+    const handleSubmit = () => {
+        const newTarget = parseInt(input, 10);
+        if (isNaN(newTarget) || newTarget <= 0) {
+            alert('目標金額を正しく入力してください。');
+            return;
+        }
+        // Stateを更新 (本来はデータストアに保存すべきですが、ここではStateのみ更新)
+        onTargetChange(newTarget); 
+        onClose();
+    };
+
+    return (
+        <Modal isOpen={isOpen} onClose={onClose}>
+            <h2 className="text-2xl font-bold mb-4 text-white flex items-center">
+                <Target size={24} className="mr-2 text-yellow-500"/>
+                月間目標を設定
+            </h2>
+            
+            <p className="text-sm text-gray-400 mb-4">
+                月間の目標売上金額を入力してください。
+            </p>
+
+            <label className="block text-sm font-medium text-gray-400 mb-1">目標金額 (¥)</label>
+            <div className="flex items-center mb-6 bg-gray-800 p-3 rounded-lg">
+                <DollarSign size={20} className="text-green-400 mr-2" />
+                <span className="text-xl font-bold mr-2">¥</span>
+                <input
+                    type="number"
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    placeholder="例: 600000"
+                    className="w-full bg-transparent text-white text-xl font-bold focus:outline-none"
+                    inputMode="numeric"
+                />
+            </div>
+
+            <button
+                onClick={handleSubmit}
+                className="w-full bg-yellow-500 hover:bg-yellow-600 text-black font-bold py-3 rounded-lg flex items-center justify-center transition"
+            >
+                <Check size={20} className="mr-2"/>
+                目標を保存
+            </button>
+        </Modal>
+    );
+};
+
+
+// =================================================================
+// ★ KeypadModal コンポーネント (画面下部スライドイン、モバイル最適)
+// =================================================================
+
 const KeypadModal: React.FC<{
     isOpen: boolean;
     onClose: () => void;
@@ -896,12 +977,10 @@ const KeypadModal: React.FC<{
     onAmountChange: (newAmount: number) => void;
 }> = ({ isOpen, onClose, currentAmount, onAmountChange }) => {
 
-    // currentAmountを文字列として扱う
     const [display, setDisplay] = useState(currentAmount > 0 ? currentAmount.toString() : '');
 
     useEffect(() => {
         if (isOpen) {
-            // モーダルが開いたとき、初期値 (currentAmount) で表示をリセット
             setDisplay(currentAmount > 0 ? currentAmount.toString() : '');
         }
     }, [isOpen, currentAmount]);
@@ -912,7 +991,6 @@ const KeypadModal: React.FC<{
         } else if (value === 'DEL') {
             setDisplay(prev => prev.slice(0, -1));
         } else if (value === '00') {
-            // 00 を押した場合、'0'または空文字以外なら追加
             setDisplay(prev => (prev === '0' || prev === '') ? '0' : prev + '00');
         } else if (display.length < 9) { // 桁数制限
             setDisplay(prev => (prev === '0' || prev === '') ? value : prev + value);
@@ -937,6 +1015,7 @@ const KeypadModal: React.FC<{
     if (!isOpen) return null;
 
     return (
+        // モバイルで使いやすい画面下部からのスライドイン効果を模倣
         <div className="fixed inset-0 bg-black bg-opacity-75 flex items-end justify-center z-50 p-0">
             <div className="bg-gray-900 p-4 rounded-t-xl shadow-2xl w-full max-w-sm relative">
                 <div className="mb-4">
