@@ -24,8 +24,7 @@ import {
     Smartphone,
     Ticket,
     Wallet,
-    // 【修正箇所】: ListChecks を追加
-    ListChecks 
+    ListChecks // 以前修正した、欠落していたインポート
 } from 'lucide-react';
 
 // =================================================================
@@ -352,7 +351,7 @@ export default function Home() {
 
             {/* シフト管理セクション */}
             {currentShift ? (
-                // 【以前の修正箇所】: m-4 (マージン) と rounded-xl (角丸) を適用
+                // m-4 (マージン) と rounded-xl (角丸) を適用
                 <section className="m-4 p-4 bg-gray-800 text-white shadow-xl rounded-xl"> 
                     
                     {/* 営業中ステータスと時刻 */}
@@ -394,7 +393,6 @@ export default function Home() {
 
                     {/* 乗車回数と平均単価のカード */}
                     <div className="grid grid-cols-2 gap-4 mb-8">
-                        {/* ListChecks アイコンが正しく使われています */}
                         <StatCard icon={ListChecks} label="乗車回数" value={`${shiftSummary.rideCount} 回`} color="text-blue-400"/>
                         <StatCard icon={DollarSign} label="平均単価" value={`¥${shiftSummary.avgFare.toLocaleString()}`} color="text-red-400"/>
                     </div>
@@ -639,69 +637,86 @@ const AddSaleModal: React.FC<{
     onClose: () => void;
     onAdd: (amount: number, methodId: number) => void;
 }> = ({ isOpen, onClose, onAdd }) => {
-    const [amount, setAmount] = useState('');
+    const [amount, setAmount] = useState(0); // number型に変更
     const [methodId, setMethodId] = useState(PAYMENT_METHODS[0].id);
+    const [isKeypadOpen, setIsKeypadOpen] = useState(false); // KeypadモーダルのState
 
     const handleSubmit = () => {
-        const parsedAmount = parseInt(amount, 10);
-        if (isNaN(parsedAmount) || parsedAmount <= 0) {
+        if (amount <= 0) {
             alert('金額を正しく入力してください。');
             return;
         }
-        onAdd(parsedAmount, methodId);
-        setAmount('');
+        onAdd(amount, methodId);
+        setAmount(0);
     };
     
     useEffect(() => {
         if (!isOpen) {
-            setAmount('');
+            setAmount(0);
             setMethodId(PAYMENT_METHODS[0].id);
         }
     }, [isOpen]);
 
     return (
-        <Modal isOpen={isOpen} onClose={onClose}>
-            <h2 className="text-2xl font-bold mb-4 text-white">売上を記録</h2>
-            
-            <label className="block text-sm font-medium text-gray-400 mb-1">金額 (¥)</label>
-            <div className="flex items-center mb-4 bg-gray-800 p-3 rounded-lg">
-                <DollarSign size={20} className="text-green-400 mr-2" />
-                <input
-                    type="number"
-                    value={amount}
-                    onChange={(e) => setAmount(e.target.value)}
-                    placeholder="例: 1500"
-                    className="w-full bg-transparent text-white text-xl font-bold focus:outline-none"
-                    inputMode="numeric"
-                />
-            </div>
-            
-            <label className="block text-sm font-medium text-gray-400 mb-2">支払い方法</label>
-            <div className="grid grid-cols-2 gap-3 mb-6">
-                {PAYMENT_METHODS.map(method => (
-                    <button
-                        key={method.id}
-                        onClick={() => setMethodId(method.id)}
-                        className={`p-3 rounded-lg flex items-center justify-center text-sm font-semibold transition ${
-                            methodId === method.id 
-                                ? 'bg-yellow-500 text-black' 
-                                : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                        }`}
-                    >
-                        <method.icon size={18} className="mr-2"/>
-                        {method.name}
-                    </button>
-                ))}
-            </div>
-            
-            <button
-                onClick={handleSubmit}
-                className="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-3 rounded-lg flex items-center justify-center transition"
-            >
-                <Check size={20} className="mr-2"/>
-                記録を確定
-            </button>
-        </Modal>
+        <>
+            <Modal isOpen={isOpen && !isKeypadOpen} onClose={onClose}>
+                <h2 className="text-2xl font-bold mb-4 text-white">売上を記録</h2>
+                
+                {/* 金額表示とキーパッド起動ボタン */}
+                <label className="block text-sm font-medium text-gray-400 mb-1">金額 (¥)</label>
+                <button
+                    onClick={() => setIsKeypadOpen(true)}
+                    className="w-full flex items-center justify-between mb-4 bg-gray-800 p-3 rounded-lg hover:bg-gray-700 transition"
+                >
+                    <div className="flex items-center">
+                        <DollarSign size={20} className="text-green-400 mr-2" />
+                        <span className="text-white text-xl font-bold">
+                            {amount > 0 ? amount.toLocaleString() : '金額を入力'}
+                        </span>
+                    </div>
+                    <ChevronRight size={20} className="text-gray-400" />
+                </button>
+                
+                <label className="block text-sm font-medium text-gray-400 mb-2">支払い方法</label>
+                <div className="grid grid-cols-2 gap-3 mb-6">
+                    {PAYMENT_METHODS.map(method => (
+                        <button
+                            key={method.id}
+                            onClick={() => setMethodId(method.id)}
+                            className={`p-3 rounded-lg flex items-center justify-center text-sm font-semibold transition ${
+                                methodId === method.id 
+                                    ? 'bg-yellow-500 text-black' 
+                                    : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                            }`}
+                        >
+                            <method.icon size={18} className="mr-2"/>
+                            {method.name}
+                        </button>
+                    ))}
+                </div>
+                
+                <button
+                    onClick={handleSubmit}
+                    disabled={amount === 0}
+                    className={`w-full font-bold py-3 rounded-lg flex items-center justify-center transition ${
+                        amount > 0 
+                            ? 'bg-green-500 hover:bg-green-600 text-white' 
+                            : 'bg-gray-600 text-gray-400 cursor-not-allowed'
+                    }`}
+                >
+                    <Check size={20} className="mr-2"/>
+                    記録を確定
+                </button>
+            </Modal>
+
+            {/* キーパッドモーダル */}
+            <KeypadModal
+                isOpen={isKeypadOpen}
+                onClose={() => setIsKeypadOpen(false)}
+                currentAmount={amount}
+                onAmountChange={setAmount}
+            />
+        </>
     );
 };
 
@@ -866,5 +881,98 @@ const EndShiftModal: React.FC<{
                 </button>
             </div>
         </Modal>
+    );
+};
+
+// =================================================================
+// ★ KeypadModal コンポーネント (復元/仮定義)
+// =================================================================
+
+// ユーザーの要望により復元された、キーパッド入力用のモーダル
+const KeypadModal: React.FC<{
+    isOpen: boolean;
+    onClose: () => void;
+    currentAmount: number;
+    onAmountChange: (newAmount: number) => void;
+}> = ({ isOpen, onClose, currentAmount, onAmountChange }) => {
+
+    // currentAmountを文字列として扱う
+    const [display, setDisplay] = useState(currentAmount > 0 ? currentAmount.toString() : '');
+
+    useEffect(() => {
+        if (isOpen) {
+            // モーダルが開いたとき、初期値 (currentAmount) で表示をリセット
+            setDisplay(currentAmount > 0 ? currentAmount.toString() : '');
+        }
+    }, [isOpen, currentAmount]);
+
+    const handleInput = (value: string) => {
+        if (value === 'C') {
+            setDisplay('');
+        } else if (value === 'DEL') {
+            setDisplay(prev => prev.slice(0, -1));
+        } else if (value === '00') {
+            // 00 を押した場合、'0'または空文字以外なら追加
+            setDisplay(prev => (prev === '0' || prev === '') ? '0' : prev + '00');
+        } else if (display.length < 9) { // 桁数制限
+            setDisplay(prev => (prev === '0' || prev === '') ? value : prev + value);
+        }
+    };
+
+    const handleConfirm = () => {
+        const amount = parseInt(display || '0', 10);
+        if (amount > 0) {
+            onAmountChange(amount);
+            onClose();
+        }
+    };
+
+    const keypadLayout = [
+        ['1', '2', '3', 'DEL'],
+        ['4', '5', '6', 'C'],
+        ['7', '8', '9', '00'],
+        ['0', '確定']
+    ];
+
+    if (!isOpen) return null;
+
+    return (
+        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-end justify-center z-50 p-0">
+            <div className="bg-gray-900 p-4 rounded-t-xl shadow-2xl w-full max-w-sm relative">
+                <div className="mb-4">
+                    <p className="text-sm text-gray-400">金額入力</p>
+                    <div className="text-4xl font-extrabold text-white text-right py-2 bg-gray-800 rounded px-3">
+                        ¥{parseInt(display || '0', 10).toLocaleString()}
+                    </div>
+                </div>
+                
+                <div className="grid grid-cols-4 gap-2">
+                    {keypadLayout.flat().map((key, index) => {
+                        const isConfirm = key === '確定';
+                        return (
+                            <button
+                                key={index}
+                                onClick={() => isConfirm ? handleConfirm() : handleInput(key)}
+                                className={`
+                                    p-4 rounded-lg text-2xl font-bold transition 
+                                    ${isConfirm 
+                                        ? 'col-span-2 bg-green-500 hover:bg-green-600 text-white' 
+                                        : (key === 'C' || key === 'DEL' 
+                                            ? 'bg-red-700 hover:bg-red-600 text-white' 
+                                            : 'bg-gray-700 hover:bg-gray-600 text-white')}
+                                `}
+                                style={{ height: '60px' }}
+                                disabled={isConfirm && parseInt(display || '0', 10) === 0}
+                            >
+                                {key}
+                            </button>
+                        );
+                    })}
+                </div>
+                <button onClick={onClose} className="w-full mt-3 p-2 text-sm text-gray-400 hover:text-white">
+                    キャンセル
+                </button>
+            </div>
+        </div>
     );
 };
