@@ -3,19 +3,33 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-// 【修正1】supabaseを直接インポートするのではなく、getSupabaseClient関数をインポート
 import { getSupabaseClient } from '../../utils/supabase';
-import { DollarSign, Clock, Target, Plus, RefreshCw, BarChart, Smartphone, CreditCard, Tag, CarTaxiFront, TrendingUp, Calendar } from 'lucide-react'; 
 import Link from 'next/link';
 
-// ★★★ KeypadModal のインポート ★★★
-import { KeypadModal } from '../components/KeypadModal';
+// アイコンのインポート
+import { 
+    CarTaxiFront, 
+    Target, 
+    ArrowRight, 
+    X, 
+    Trash2, 
+    Check, 
+    Pencil, 
+    Clock, 
+    DollarSign,
+    BarChart,
+    ChevronRight,
+    Calendar,
+    CreditCard,
+    Smartphone,
+    Ticket,
+    Wallet
+} from 'lucide-react';
 
-// ★★★ 定数とLocalStorageキー ★★★
-const LOCAL_STORAGE_CLOSING_DAY_KEY = 'taxi_closing_day';
-const LOCAL_STORAGE_MONTHLY_TARGET_KEY = 'taxi_monthly_target';
+// =================================================================
+// 1. 型定義
+// =================================================================
 
-// ★★★ データ型定義 ★★★
 interface Shift {
     id: string;
     start_time: string;
@@ -28,150 +42,80 @@ interface Sale {
     amount: number;
     payment_method_id: number;
     created_at: string;
-    shift_id: string; 
+    shift_id: string;
 }
 
-// 支払い方法マッピング
-const paymentMethods = [
-    { id: 1, name: '現金', key: 'cash' },
-    { id: 2, name: 'アプリ/QR', key: 'qr/other' },
-    { id: 3, name: 'カード', key: 'card' },
-    { id: 4, name: 'チケ', key: 'ticket' },
+interface ShiftSummary {
+    totalSales: number;
+    rideCount: number;
+    avgFare: number;
+}
+
+interface MonthlySummary {
+    totalSales: number;
+    totalRides: number;
+}
+
+
+// =================================================================
+// 2. 定数・マッピング
+// =================================================================
+
+const PAYMENT_METHODS = [
+    { id: 1, name: '現金', icon: Wallet, color: 'text-green-400' },
+    { id: 2, name: 'アプリ/QR', icon: Smartphone, color: 'text-blue-400' },
+    { id: 3, name: 'カード', icon: CreditCard, color: 'text-yellow-400' },
+    { id: 4, name: 'チケ', icon: Ticket, color: 'text-red-400' },
 ];
 
-const paymentMethodMap: { [key: string]: number } = {
-    'cash': 1,
-    'qr/other': 2,
-    'card': 3,
-    'ticket': 4,
-};
+const paymentMethodIconMap: { [key: number]: React.ElementType } = PAYMENT_METHODS.reduce((map, method) => {
+    map[method.id] = method.icon;
+    return map;
+}, {} as { [key: number]: React.ElementType });
 
-const paymentMethodNameMap: { [key: number]: string } = {
-    1: '現金', 2: 'アプリ/QR', 3: 'カード', 4: 'チケ'
-};
+const paymentMethodColorMap: { [key: number]: string } = PAYMENT_METHODS.reduce((map, method) => {
+    map[method.id] = method.color;
+    return map;
+}, {} as { [key: number]: string });
 
-const paymentMethodIconMap: { [key: number]: React.ElementType } = {
-    1: DollarSign,
-    2: Smartphone,
-    3: CreditCard,
-    4: Tag,
-};
-
-const paymentMethodColorMap: { [key: number]: string } = {
-    1: 'text-green-500', 2: 'text-blue-500', 3: 'text-red-500', 4: 'text-yellow-500'
-};
-
-// ★★★ ヘルパー関数: 月間期間の計算 ★★★
-const formatToSupabaseDate = (date: Date): string => {
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}T00:00:00+00:00`; 
-};
-
-const calculateMonthlyPeriod = (closingDay: number): { start: string, end: string, periodText: string } => {
-    if (!closingDay) {
-        return { start: new Date(0).toISOString(), end: new Date().toISOString(), periodText: '期間未設定' };
-    }
-    
-    const now = new Date();
-    const today = now.getDate();
-    let startDate: Date;
-    
-    if (today > closingDay) {
-        startDate = new Date(now.getFullYear(), now.getMonth(), closingDay + 1);
-    } else {
-        startDate = new Date(now.getFullYear(), now.getMonth() - 1, closingDay + 1);
-    }
-    
-    const startMonth = startDate.getMonth() + 1;
-    const startDay = startDate.getDate();
-    const endDate = new Date(startDate.getFullYear(), startDate.getMonth() + 1, closingDay);
-    const endMonth = endDate.getMonth() + 1;
-    const endDay = endDate.getDate();
-
-    const periodText = `${startMonth}/${startDay} 〜 ${endMonth}/${endDay}`;
-    
-    return { 
-        start: formatToSupabaseDate(startDate), 
-        end: now.toISOString(),
-        periodText: periodText,
-    };
-};
+const paymentMethodNameMap: { [key: number]: string } = PAYMENT_METHODS.reduce((map, method) => {
+    map[method.id] = method.name;
+    return map;
+}, {} as { [key: number]: string });
 
 
-// ★★★ メインコンポーネント ★★★
+// =================================================================
+// 3. メインコンポーネント (Home)
+// =================================================================
+
 export default function Home() {
+    const [supabase, setSupabase] = useState<ReturnType<typeof getSupabaseClient>>(null);
     const [currentShift, setCurrentShift] = useState<Shift | null>(null);
     const [sales, setSales] = useState<Sale[]>([]);
+    const [targetInput, setTargetInput] = useState<string>('30000'); // 目標金額の入力値
     const [isLoading, setIsLoading] = useState(true);
-    const [targetInput, setTargetInput] = useState<string>('30000');
+    const [monthlySummary, setMonthlySummary] = useState<MonthlySummary>({ totalSales: 0, totalRides: 0 });
 
-    // キーパッド・モーダル関連のステート
-    const [keypadAmount, setKeypadAmount] = useState<number | ''>('');
-    const [keypadPaymentMethod, setKeypadPaymentMethod] = useState<string>('cash');
-    const [isModalOpen, setIsModalOpen] = useState(false);
-    const [isRegistering, setIsRegistering] = useState(false);
-    const [editingSaleId, setEditingSaleId] = useState<string | null>(null); 
+    // モーダル管理
+    const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+    const [isEndModalOpen, setIsEndModalOpen] = useState(false);
+    const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+    const [saleToDelete, setSaleToDelete] = useState<Sale | null>(null);
+    const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+    const [saleToEdit, setSaleToEdit] = useState<Sale | null>(null);
 
-    // 月間目標関連のステート
-    const [monthlyClosingDay, setMonthlyClosingDay] = useState<number | null>(null);
-    const [monthlyTarget, setMonthlyTarget] = useState<number>(0);
-    const [monthlySummary, setMonthlySummary] = useState<{ totalSales: number, rideCount: number, periodText: string }>({ totalSales: 0, rideCount: 0, periodText: '' });
-    const [isMonthlySettingsModalOpen, setIsMonthlySettingsModalOpen] = useState(false);
-
-    // 【修正2】getSupabaseClient() を呼び出してクライアントインスタンスを取得
-    const supabase = getSupabaseClient();
-
-    // 設定の読み込み
+    // Supabaseクライアントの初期化 (Client Componentでのみ実行)
     useEffect(() => {
-        const storedClosingDay = localStorage.getItem(LOCAL_STORAGE_CLOSING_DAY_KEY);
-        const day = storedClosingDay ? parseInt(storedClosingDay) : 25;
-        setMonthlyClosingDay(day); 
-        
-        const storedTarget = localStorage.getItem(LOCAL_STORAGE_MONTHLY_TARGET_KEY);
-        const target = storedTarget ? parseInt(storedTarget) : 600000;
-        setMonthlyTarget(target); 
+        setSupabase(getSupabaseClient());
     }, []);
 
-    // 集計計算 (シフトごと)
-    const shiftSummary = useMemo(() => {
-        const totalSales = sales.reduce((sum, sale) => sum + sale.amount, 0);
-        const rideCount = sales.length;
-        const avgFare = rideCount > 0 ? Math.round(totalSales / rideCount) : 0;
-        
-        const breakdown = Object.entries(paymentMethodMap).map(([key, id]) => {
-            const amount = sales
-                .filter(sale => sale.payment_method_id === id)
-                .reduce((sum, sale) => sum + sale.amount, 0);
-            return { 
-                id: id, 
-                name: paymentMethodNameMap[id], 
-                amount: amount, 
-                icon: paymentMethodIconMap[id], 
-                color: paymentMethodColorMap[id],
-                key: key,
-            };
-        });
+    // データの取得
+    const fetchData = useCallback(async () => {
+        if (!supabase) return;
 
-        const filteredBreakdown = breakdown.filter(b => b.amount > 0);
-        
-        return { totalSales, rideCount, avgFare, breakdown: filteredBreakdown };
-    }, [sales]);
-
-
-    // ★★★ 修正ポイント: fetchData を最初に定義する (依存関係の解消) ★★★
-    const fetchData = useCallback(async (closingDay: number | null = monthlyClosingDay) => {
         setIsLoading(true);
 
-        // 【修正3】supabaseのnullチェック
-        if (!supabase) {
-            console.error("Supabase client is not available (Missing ENV or during SSR).");
-            setIsLoading(false);
-            return;
-        }
-
-        // 1. アクティブなシフトのデータを取得
+        // 1. 現在アクティブなシフトを取得 (end_timeがNULLのもの)
         const { data: shiftData, error: shiftError } = await supabase
             .from('shifts')
             .select('*')
@@ -179,21 +123,24 @@ export default function Home() {
             .limit(1);
 
         if (shiftError) {
-            console.error("シフトデータ取得エラー:", shiftError.message);
+            console.error('シフトデータ取得エラー:', shiftError.message);
+            setIsLoading(false);
+            return;
         }
 
-        const activeShift = shiftData && shiftData.length > 0 ? shiftData[0] as Shift : null;
+        const activeShift = shiftData.length > 0 ? (shiftData[0] as Shift) : null;
         setCurrentShift(activeShift);
-        
+
+        // 2. 売上データを取得
         if (activeShift) {
             const { data: salesData, error: salesError } = await supabase
                 .from('sales')
                 .select('*')
-                .eq('shift_id', activeShift.id) 
+                .eq('shift_id', activeShift.id)
                 .order('created_at', { ascending: false });
 
             if (salesError) {
-                console.error("売上データ取得エラー:", salesError.message);
+                console.error('売上データ取得エラー:', salesError.message);
                 setSales([]);
             } else {
                 setSales(salesData as Sale[]);
@@ -202,271 +149,218 @@ export default function Home() {
             setSales([]);
         }
 
-
-        // 2. 月間集計
-        if (closingDay) {
-            const { start: periodStart, end: periodEnd, periodText } = calculateMonthlyPeriod(closingDay);
+        // 3. 月間サマリーを取得 (過去30日間)
+        const thirtyDaysAgo = new Date();
+        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+        const thirtyDaysAgoISO = thirtyDaysAgo.toISOString();
+        
+        const { data: monthlyData, error: monthlyError } = await supabase
+            .from('sales')
+            .select('amount')
+            .gte('created_at', thirtyDaysAgoISO);
             
-            const { data: periodShiftsData, error: periodShiftsError } = await supabase
-                .from('shifts')
-                .select('id')
-                .gte('start_time', periodStart)
-                .lt('start_time', periodEnd); 
-
-            let monthlyTotalSales = 0;
-            let monthlyRideCount = 0;
-
-            if (periodShiftsError) {
-                console.error("期間内シフトデータ取得エラー:", periodShiftsError.message);
-            } else if (periodShiftsData.length > 0) {
-                const shiftIds = periodShiftsData.map(s => s.id);
-
-                const { data: monthlySalesData, error: monthlySalesError } = await supabase
-                    .from('sales')
-                    .select('amount')
-                    .in('shift_id', shiftIds);
-
-                if (monthlySalesError) {
-                    console.error("月間売上データ取得エラー:", monthlySalesError.message);
-                } else {
-                    monthlyTotalSales = monthlySalesData.reduce((sum, sale) => sum + sale.amount, 0);
-                    monthlyRideCount = monthlySalesData.length;
-                }
-            }
-
-            setMonthlySummary({ 
-                totalSales: monthlyTotalSales, 
-                rideCount: monthlyRideCount, 
-                periodText: periodText 
-            });
+        if (!monthlyError && monthlyData) {
+            const totalSales = monthlyData.reduce((sum, sale) => sum + sale.amount, 0);
+            const totalRides = monthlyData.length;
+            setMonthlySummary({ totalSales, totalRides });
         }
+
 
         setIsLoading(false);
-    }, [monthlyClosingDay, supabase]); // 依存関係にsupabaseを追加
+    }, [supabase]);
 
-    // monthlyClosingDay が設定されたらデータを取得
+
     useEffect(() => {
-        if (monthlyClosingDay !== null) {
-            fetchData();
-        }
-    }, [fetchData, monthlyClosingDay]);
+        if (supabase) fetchData();
+    }, [supabase, fetchData]);
 
 
-    // シフト開始ロジック
+    // =================================================================
+    // 4. アクション関数
+    // =================================================================
+
+    // シフト開始
     const startShift = useCallback(async () => {
-        if (currentShift) return;
+        if (!supabase) return;
+        const targetAmount = parseInt(targetInput, 10);
 
-        // 【修正4】supabaseのnullチェック (startShift)
-        if (!supabase) {
-            alert('シフト開始に失敗しました。: データベース接続エラー');
+        if (isNaN(targetAmount) || targetAmount <= 0) {
+            alert('目標金額を正しく入力してください。');
             return;
         }
 
-        const target = parseInt(targetInput) || 30000;
-        
-        const { data, error } = await supabase
-            .from('shifts')
-            .insert({ target_amount: target })
-            .select()
-            .single();
+        const newShift: Omit<Shift, 'id' | 'end_time'> = {
+            start_time: new Date().toISOString(),
+            target_amount: targetAmount,
+        };
+
+        const { error } = await supabase.from('shifts').insert(newShift);
 
         if (error) {
-            console.error('シフト開始エラー:', error.message);
-            alert('シフト開始に失敗しました。');
-        } else if (data) {
-            setCurrentShift(data as Shift);
-            setSales([]);
+            alert('シフト開始に失敗しました。' + error.message);
+        } else {
+            await fetchData();
+            alert('シフトを開始しました！頑張りましょう！');
         }
-    }, [currentShift, targetInput, supabase]); // 依存関係にsupabaseを追加
+    }, [supabase, targetInput, fetchData]);
 
-    // シフト終了ロジック
+
+    // 売上追加
+    const addSale = useCallback(async (amount: number, methodId: number) => {
+        if (!supabase || !currentShift) return;
+
+        const newSale: Omit<Sale, 'id' | 'created_at'> = {
+            amount,
+            payment_method_id: methodId,
+            shift_id: currentShift.id,
+        };
+
+        const { error } = await supabase.from('sales').insert(newSale);
+
+        if (error) {
+            alert('売上登録に失敗しました。');
+        } else {
+            setIsAddModalOpen(false);
+            await fetchData();
+        }
+    }, [supabase, currentShift, fetchData]);
+
+
+    // 売上削除
+    const deleteSale = useCallback(async (saleId: string) => {
+        if (!supabase) return;
+
+        const { error } = await supabase.from('sales').delete().eq('id', saleId);
+
+        if (error) {
+            alert('売上削除に失敗しました。');
+        } else {
+            setIsDeleteModalOpen(false);
+            setSaleToDelete(null);
+            await fetchData();
+        }
+    }, [supabase, fetchData]);
+
+    // 売上編集
+    const editSale = useCallback(async (saleId: string, newAmount: number, newMethodId: number) => {
+        if (!supabase) return;
+
+        const { error } = await supabase
+            .from('sales')
+            .update({ amount: newAmount, payment_method_id: newMethodId })
+            .eq('id', saleId);
+
+        if (error) {
+            alert('売上編集に失敗しました。');
+        } else {
+            setIsEditModalOpen(false);
+            setSaleToEdit(null);
+            await fetchData();
+        }
+    }, [supabase, fetchData]);
+
+
+    // シフト終了
     const endShift = useCallback(async () => {
-        if (!currentShift) return;
+        if (!supabase || !currentShift) return;
 
-        // 【修正5】supabaseのnullチェック (endShift)
-        if (!supabase) {
-            alert('シフト終了に失敗しました。: データベース接続エラー');
-            return;
-        }
-
-        const confirmEnd = window.confirm(`総売上 ¥${shiftSummary.totalSales.toLocaleString()} でシフトを終了しますか？`);
-        if (!confirmEnd) return;
-        
         const { error } = await supabase
             .from('shifts')
             .update({ end_time: new Date().toISOString() })
             .eq('id', currentShift.id);
 
         if (error) {
-            console.error('シフト終了エラー:', error.message);
-            alert('シフト終了に失敗しました。');
+            alert('シフト終了処理に失敗しました。');
         } else {
-            setCurrentShift(null);
-            setSales([]);
-            // fetchDataを呼び出し可能
-            if (monthlyClosingDay) fetchData(monthlyClosingDay);
+            setIsEndModalOpen(false);
+            await fetchData();
+            alert(`シフト終了！総売上: ¥${shiftSummary.totalSales.toLocaleString()}`);
         }
-    }, [currentShift, shiftSummary.totalSales, monthlyClosingDay, fetchData, supabase]); // 依存関係にsupabaseを追加
+    }, [supabase, currentShift, fetchData]);
 
 
-    // 目標達成率の計算 (シフトごと)
-    const achievementPercentage = useMemo(() => {
+    // =================================================================
+    // 5. データ集計
+    // =================================================================
+
+    // 現在のシフトの集計
+    const shiftSummary: ShiftSummary = useMemo(() => {
+        const totalSales = sales.reduce((sum, sale) => sum + sale.amount, 0);
+        const rideCount = sales.length;
+        const avgFare = rideCount > 0 ? Math.round(totalSales / rideCount) : 0;
+        return { totalSales, rideCount, avgFare };
+    }, [sales]);
+
+    const shiftAchievementPercentage = useMemo(() => {
         if (!currentShift || currentShift.target_amount === 0) return 0;
         return Math.min(100, Math.round((shiftSummary.totalSales / currentShift.target_amount) * 100));
     }, [currentShift, shiftSummary.totalSales]);
 
-    // 月間達成率の計算
+    // 月間サマリー計算
+    const monthlyTarget = 600000; // 例として固定値
     const monthlyAchievementPercentage = useMemo(() => {
         if (monthlyTarget === 0) return 0;
         return Math.min(100, Math.round((monthlySummary.totalSales / monthlyTarget) * 100));
     }, [monthlySummary.totalSales, monthlyTarget]);
 
-
-    // キーパッドロジックの実装 (handleKeypadPress)
-    const handleKeypadPress = useCallback((value: string | 'C' | 'DEL') => {
-        if (isRegistering) return;
-        
-        let current = keypadAmount === '' ? '0' : String(keypadAmount);
-
-        if (value === 'C') {
-            setKeypadAmount('');
-            return;
-        }
-        if (value === 'DEL') {
-            setKeypadAmount(current.length > 1 ? Number(current.slice(0, -1)) : '');
-            return;
-        }
-
-        if (current.length >= 7) return; 
-
-        if (current === '0' && value !== '0') {
-            current = '';
-        }
-
-        const newValue = parseInt(current + value);
-        
-        if (newValue > 9999999) return; 
-        
-        setKeypadAmount(newValue);
-
-    }, [keypadAmount, isRegistering]);
+    // 月間集計期間の表示 (仮)
+    const monthStart = new Date();
+    monthStart.setDate(1);
+    const monthEnd = new Date();
+    monthEnd.setMonth(monthEnd.getMonth() + 1);
+    monthEnd.setDate(0);
+    const monthRange = `${monthStart.getMonth() + 1}/${monthStart.getDate()} 〜 ${monthEnd.getMonth() + 1}/${monthEnd.getDate()}`;
 
 
-    // 売上登録/更新ロジック (handleRegisterSale)
-    const handleRegisterSale = useCallback(async () => {
-        if (!currentShift || keypadAmount === '' || keypadAmount === 0 || isRegistering) return;
-        
-        // 【修正6】supabaseのnullチェック (handleRegisterSale)
-        if (!supabase) {
-            alert('売上処理エラー: データベース接続エラー');
-            return;
-        }
-
-        setIsRegistering(true);
-        const amount = Number(keypadAmount);
-        const methodId = paymentMethodMap[keypadPaymentMethod];
-
-        if (!methodId) {
-            alert('支払い方法が選択されていません。');
-            setIsRegistering(false);
-            return;
-        }
-
-        let error: { message: string } | null = null;
-        
-        if (editingSaleId) {
-            const { error: updateError } = await supabase
-                .from('sales')
-                .update({ 
-                    amount: amount, 
-                    payment_method_id: methodId,
-                })
-                .eq('id', editingSaleId);
-            error = updateError;
-
-        } else {
-            const { error: insertError } = await supabase
-                .from('sales')
-                .insert({ 
-                    amount: amount, 
-                    payment_method_id: methodId,
-                    shift_id: currentShift.id 
-                });
-            error = insertError;
-        }
-
-        setIsRegistering(false);
-
-        if (error) {
-            console.error('売上処理エラー:', error.message);
-            alert(`売上処理エラー: ${error.message}`);
-        } else {
-            setIsModalOpen(false);
-            setEditingSaleId(null); 
-            setKeypadAmount('');
-            fetchData(); // データリフレッシュ
-        }
-    }, [currentShift, keypadAmount, keypadPaymentMethod, editingSaleId, isRegistering, fetchData, supabase]); // 依存関係にsupabaseを追加
-
-
-    // ローディング画面
     if (isLoading) {
-        return (
-            <div className="min-h-screen flex items-center justify-center bg-black text-white">
-                <p className="text-xl font-bold">データをロード中...</p>
-            </div>
-        );
+        return <div className="min-h-screen bg-black text-white flex items-center justify-center text-xl font-bold">Loading...</div>;
     }
-    
-    // UIレンダリング
+
+    // =================================================================
+    // 6. UIレンダリング
+    // =================================================================
+
     return (
         <div className="min-h-screen bg-black p-0 max-w-md mx-auto">
             
             {/* 画面上部のヘッダー */}
             <header className="flex justify-between items-center px-4 pt-6 pb-2 text-white">
-                <h1 className="text-xl font-bold flex items-center">
-                    <CarTaxiFront size={24} className="mr-2 text-yellow-500" />
+                <div className="text-xl font-bold flex items-center">
+                    <CarTaxiFront className="mr-2 text-yellow-500" />
                     TaxiApp
-                </h1>
-                <div className="flex items-center space-x-2">
-                    <button 
-                        onClick={() => setIsMonthlySettingsModalOpen(true)}
-                        className="p-1 bg-gray-700 hover:bg-gray-600 text-yellow-500 rounded-lg transition flex items-center text-sm"
-                        title="月間目標設定"
-                    >
-                        <Target size={20} className="mr-1" /> 目標
+                </div>
+                <div className="flex space-x-3 text-sm">
+                    <button className="flex items-center text-gray-400 hover:text-white transition">
+                        <Target size={16} className="mr-1" /> 目標
                     </button>
-                    <button 
-                        onClick={() => fetchData()} 
-                        className="p-1 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition"
-                        title="データを更新"
-                    >
-                        <RefreshCw size={20} />
-                    </button>
-                    <Link href="/analysis" className="flex items-center text-sm text-yellow-500 hover:text-yellow-400">
-                        分析へ
-                        <BarChart size={20} className="ml-1" />
+                    <Link href="/analysis" className="flex items-center text-gray-400 hover:text-white transition">
+                        <BarChart size={16} className="mr-1" /> 分析へ
                     </Link>
                 </div>
             </header>
             
-            {/* ★★★ 月間サマリーセクション ★★★ */}
+            {/* 月間サマリーセクション */}
             <MonthlySummaryCard 
                 monthlySummary={monthlySummary} 
                 monthlyTarget={monthlyTarget} 
                 achievementPercentage={monthlyAchievementPercentage}
+                monthRange={monthRange}
             />
 
-            {/* ★★★ シフト管理セクション ★★★ */}
+            {/* ★★★ シフト管理セクション (修正適用済み) ★★★ */}
             {currentShift ? (
-                <section className="p-4 bg-gray-800 text-white shadow-xl">
+                // m-4 (マージン) と rounded-xl (角丸) を追加
+                <section className="m-4 p-4 bg-gray-800 text-white shadow-xl rounded-xl"> 
                     
                     {/* 営業中ステータスと時刻 */}
                     <div className="flex justify-between items-center text-sm text-gray-400 font-semibold mb-2">
-                        <span className="text-green-400">営業中 ({new Date(currentShift.start_time).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', hour12: false })}〜)</span>
+                        <div className="flex items-center">
+                            <Clock size={16} className="mr-1 text-green-400"/>
+                            営業中 ({new Date(currentShift.start_time).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', hour12: false })}〜)
+                        </div>
                         <button 
-                            onClick={endShift}
-                            className="text-red-500 hover:text-red-400 text-xs font-bold p-1 rounded transition"
+                            onClick={() => setIsEndModalOpen(true)}
+                            className="text-red-500 hover:text-red-400 transition"
                         >
                             シフト終了
                         </button>
@@ -478,34 +372,37 @@ export default function Home() {
                     </p>
 
                     {/* プログレスバー */}
-                    <div className="w-full bg-gray-600 rounded-full h-2.5 mb-2">
+                    <div className="w-full bg-gray-700 rounded-full h-2.5 mb-1">
                         <div 
-                            className="bg-yellow-500 h-2.5 rounded-full" 
-                            style={{ width: `${achievementPercentage}%` }}
+                            className="h-2.5 rounded-full bg-yellow-500 transition-all duration-500" 
+                            style={{ width: `${shiftAchievementPercentage}%` }}
                         ></div>
                     </div>
                     
                     {/* 達成率と目標金額 */}
-                    <div className="flex justify-between text-xs text-gray-400 mb-6">
-                        <span className="font-semibold">{achievementPercentage}% 達成 (本日の目標)</span>
-                        <span>目標 ¥{currentShift.target_amount.toLocaleString()}</span>
+                    <div className="flex justify-between text-xs mb-4">
+                        <p className={`${shiftAchievementPercentage >= 100 ? 'text-green-400' : 'text-gray-400'} font-semibold`}>
+                            {shiftAchievementPercentage}% 達成 (本日の目標)
+                        </p>
+                        <p className="text-gray-400">
+                            目標 ¥{currentShift.target_amount.toLocaleString()}
+                        </p>
                     </div>
 
                     {/* 乗車回数と平均単価のカード */}
                     <div className="grid grid-cols-2 gap-4 mb-8">
-                        {/* 乗車回数 */}
-                        <div className="p-3 bg-gray-700 rounded-lg flex flex-col items-center justify-center shadow-md">
-                            <CarTaxiFront size={24} className="text-blue-400 mb-1" />
-                            <p className="text-xs text-gray-300">乗車回数</p>
-                            <p className="text-2xl font-bold text-white mt-1">{shiftSummary.rideCount} 回</p>
-                        </div>
-                        {/* 平均単価 */}
-                        <div className="p-3 bg-gray-700 rounded-lg flex flex-col items-center justify-center shadow-md">
-                            <TrendingUp size={24} className="text-green-400 mb-1" />
-                            <p className="text-xs text-gray-300">平均単価</p>
-                            <p className="text-2xl font-bold text-white mt-1">¥{shiftSummary.avgFare.toLocaleString()}</p>
-                        </div>
+                        <StatCard icon={ListChecks} label="乗車回数" value={`${shiftSummary.rideCount} 回`} color="text-blue-400"/>
+                        <StatCard icon={DollarSign} label="平均単価" value={`¥${shiftSummary.avgFare.toLocaleString()}`} color="text-red-400"/>
                     </div>
+
+                    {/* 売上追加ボタン */}
+                    <button 
+                        onClick={() => setIsAddModalOpen(true)}
+                        className="w-full bg-yellow-500 hover:bg-yellow-600 text-black font-bold py-3 rounded-lg flex items-center justify-center transition"
+                    >
+                        <DollarSign size={24} className="mr-2"/>
+                        売上を記録する
+                    </button>
                 </section>
             ) : (
                 // シフト開始前
@@ -518,199 +415,164 @@ export default function Home() {
                 </section>
             )}
 
-            
-            {/* ★★★ 売上内訳と登録ボタンのコンテナ ★★★ */}
-            {currentShift && (
-                <div className="p-4">
-                    {/* 売上内訳リスト */}
-                    <div className="space-y-3 mb-8">
-                        {shiftSummary.breakdown.map(method => {
-                            const Icon = method.icon;
-                            return (
-                                <div key={method.id} className="flex justify-between items-center text-white py-2 border-b border-gray-700 hover:bg-gray-900 px-2 -mx-2 rounded">
-                                    <div className="flex flex-col">
-                                        <p className="text-lg font-bold">¥{method.amount.toLocaleString()}</p>
-                                        <div className="flex items-center text-sm text-gray-400">
-                                            {Icon && <Icon size={14} className={`${method.color} mr-1`} />}
-                                            {method.name}
-                                        </div>
-                                    </div>
-                                    <span className="text-lg font-bold text-gray-300">
-                                        ¥{method.amount.toLocaleString()}
-                                    </span>
-                                </div>
-                            );
-                        })}
-                    </div>
-
-                    {/* 売上登録ボタン */}
-                    <button
-                        onClick={() => {
-                            setKeypadAmount('');
-                            setKeypadPaymentMethod('cash');
-                            setEditingSaleId(null); 
-                            setIsModalOpen(true);
-                        }}
-                        className="fixed bottom-0 left-0 right-0 max-w-md mx-auto p-4 bg-yellow-500 hover:bg-yellow-400 text-black font-bold text-xl shadow-2xl flex items-center justify-center transition"
-                        style={{zIndex: 10}}
-                    >
-                        <Plus size={24} className="mr-2" />
-                        売上を入力
-                    </button>
-                </div>
-            )}
-            
-            {/* ★★★ 最新の売上履歴セクションの呼び出し ★★★ */}
-            {currentShift && sales.length > 0 && (
-                <LatestSalesHistory 
-                    sales={sales} 
-                    currentShift={currentShift} 
-                    fetchData={fetchData} 
-                    setEditingSaleId={setEditingSaleId}
-                    setKeypadAmount={setKeypadAmount}
-                    setKeypadPaymentMethod={setKeypadPaymentMethod}
-                    setIsModalOpen={setIsModalOpen}
-                />
-            )}
-
-            {/* ★★★ キーパッドモーダルのレンダリング ★★★ */}
-            <KeypadModal
-                amount={keypadAmount}
-                paymentMethod={keypadPaymentMethod}
-                setPaymentMethod={setKeypadPaymentMethod}
-                handleRegisterSale={handleRegisterSale}
-                handleKeypadPress={handleKeypadPress} 
-                isLoading={isRegistering}
-                isDisabled={!currentShift || isRegistering}
-                isOpen={isModalOpen}
-                onClose={() => {
-                    setIsModalOpen(false);
-                    setEditingSaleId(null); 
-                    setKeypadAmount('');
+            {/* 直近の売上履歴 */}
+            <LatestSalesHistory 
+                sales={sales} 
+                currentShift={currentShift}
+                handleEdit={(sale) => { setSaleToEdit(sale); setIsEditModalOpen(true); }}
+                handleDelete={(saleId) => { 
+                    const sale = sales.find(s => s.id === saleId);
+                    setSaleToDelete(sale ?? null); 
+                    setIsDeleteModalOpen(true);
                 }}
-                isEditing={!!editingSaleId} 
             />
 
-            {/* ★★★ 月間目標設定モーダルのレンダリング ★★★ */}
-            <MonthlySettingsModal 
-                isOpen={isMonthlySettingsModalOpen}
-                onClose={() => setIsMonthlySettingsModalOpen(false)}
-                currentClosingDay={monthlyClosingDay || 25}
-                currentTarget={monthlyTarget}
-                setClosingDay={setMonthlyClosingDay}
-                setMonthlyTarget={setMonthlyTarget}
-                fetchData={fetchData}
+            {/* モーダル群 */}
+            <AddSaleModal 
+                isOpen={isAddModalOpen} 
+                onClose={() => setIsAddModalOpen(false)} 
+                onAdd={addSale}
+            />
+            <EditSaleModal
+                isOpen={isEditModalOpen}
+                onClose={() => setIsEditModalOpen(false)}
+                onEdit={editSale}
+                sale={saleToEdit}
+            />
+            <DeleteSaleModal 
+                isOpen={isDeleteModalOpen} 
+                onClose={() => setIsDeleteModalOpen(false)}
+                onDelete={() => saleToDelete && deleteSale(saleToDelete.id)}
+                sale={saleToDelete}
+            />
+            <EndShiftModal 
+                isOpen={isEndModalOpen} 
+                onClose={() => setIsEndModalOpen(false)}
+                onEnd={endShift}
+                summary={shiftSummary}
             />
         </div>
     );
 }
 
 
-// ★★★ サブコンポーネント定義 ★★★
+// =================================================================
+// 7. サブコンポーネント
+// =================================================================
 
-// シフト設定カード
+// 汎用統計表示カード
+const StatCard: React.FC<{ icon: React.ElementType, label: string, value: string, color: string }> = ({ icon: Icon, label, value, color }) => (
+    <div className="bg-gray-700 p-3 rounded-lg text-center">
+        <Icon size={24} className={`mx-auto mb-1 ${color}`} />
+        <p className="text-xs text-gray-400">{label}</p>
+        <p className="text-xl font-bold text-white">{value}</p>
+    </div>
+);
+
+// シフト開始設定カード
 const ShiftSetupCard: React.FC<{
     targetInput: string;
     setTargetInput: (value: string) => void;
     startShift: () => void;
 }> = ({ targetInput, setTargetInput, startShift }) => (
-    <div className="space-y-4">
-        <h2 className="text-xl font-bold flex items-center text-white mb-2">
-            <Clock size={20} className="mr-2" />
-            シフト開始
+    <>
+        <h2 className="text-xl font-bold mb-3 flex items-center">
+            <CarTaxiFront size={24} className="mr-2 text-yellow-500" />
+            シフトを開始する
         </h2>
-        <div className="flex items-center bg-gray-800 p-3 rounded-lg">
-            <Target size={20} className="text-red-400 mr-3" />
-            <span className="text-gray-400 mr-2">目標金額 (¥):</span>
+        <p className="text-sm text-gray-400 mb-4">本日の目標金額を設定してください。</p>
+        <div className="flex items-center mb-6 bg-gray-800 p-3 rounded-lg">
+            <DollarSign size={20} className="text-green-400 mr-2" />
+            <span className="text-xl font-bold mr-2">¥</span>
             <input
                 type="number"
                 value={targetInput}
                 onChange={(e) => setTargetInput(e.target.value)}
-                placeholder="目標金額"
-                className="flex-1 bg-transparent border-b border-gray-600 focus:border-yellow-500 outline-none text-white text-right"
+                placeholder="目標金額 (例: 30000)"
+                className="w-full bg-transparent text-white text-xl font-bold focus:outline-none"
             />
         </div>
         <button
             onClick={startShift}
-            className="w-full p-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-lg transition"
+            className="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-3 rounded-lg flex items-center justify-center transition"
         >
-            シフト開始 (▶)
+            <ArrowRight size={20} className="mr-2" />
+            シフト開始
         </button>
+    </>
+);
+
+
+// 月間サマリーカード
+const MonthlySummaryCard: React.FC<{
+    monthlySummary: MonthlySummary;
+    monthlyTarget: number;
+    achievementPercentage: number;
+    monthRange: string;
+}> = ({ monthlySummary, monthlyTarget, achievementPercentage, monthRange }) => (
+    <div className="m-4 p-4 bg-gray-800 text-white shadow-xl rounded-xl">
+        <div className="flex items-center text-sm text-gray-400 mb-2">
+            <Calendar size={16} className="mr-1 text-yellow-500"/>
+            月間売上 ({monthRange})
+        </div>
+        <p className="text-4xl font-extrabold mb-1">
+            ¥{monthlySummary.totalSales.toLocaleString()}
+        </p>
+        
+        <div className="w-full bg-gray-700 rounded-full h-1.5 mb-1">
+            <div 
+                className="h-1.5 rounded-full bg-blue-500 transition-all duration-500" 
+                style={{ width: `${achievementPercentage}%` }}
+            ></div>
+        </div>
+        
+        <div className="flex justify-between text-xs">
+            <p className="text-gray-400">
+                {achievementPercentage}% 達成
+            </p>
+            <p className="text-gray-400">
+                目標 ¥{monthlyTarget.toLocaleString()}
+            </p>
+        </div>
+        
+        <p className="text-xs text-gray-400 mt-2">
+            乗車: {monthlySummary.totalRides} 回
+        </p>
     </div>
 );
 
 
-// 最新の売上履歴セクション
-const LatestSalesHistory: React.FC<{ 
-    sales: Sale[], 
-    currentShift: Shift, 
-    fetchData: (closingDay?: number) => void,
-    setEditingSaleId: (id: string | null) => void;
-    setKeypadAmount: (amount: number | '') => void;
-    setKeypadPaymentMethod: (method: string) => void;
-    setIsModalOpen: (open: boolean) => void;
-}> = ({ 
-    sales, 
-    fetchData, 
-    setEditingSaleId, 
-    setKeypadAmount, 
-    setKeypadPaymentMethod, 
-    setIsModalOpen 
-}) => {
+// 直近の売上履歴コンポーネント
+const LatestSalesHistory: React.FC<{
+    sales: Sale[];
+    currentShift: Shift | null;
+    handleEdit: (sale: Sale) => void;
+    handleDelete: (saleId: string) => void;
+}> = ({ sales, currentShift, handleEdit, handleDelete }) => {
     
-    // 売上削除ロジック
-    const handleDelete = async (saleId: string) => {
-        // 【修正7】supabaseのnullチェック (handleDelete)
-        const supabase = getSupabaseClient();
-        if (!supabase) {
-            alert('売上削除に失敗しました。: データベース接続エラー');
-            return;
-        }
-
-        if (!window.confirm("この売上を削除してもよろしいですか？\n元に戻すことはできません。")) {
-            return;
-        }
-
-        const { error } = await supabase
-            .from('sales')
-            .delete()
-            .eq('id', saleId);
-
-        if (error) {
-            console.error('売上削除エラー:', error.message);
-            alert('売上削除に失敗しました。');
-        } else {
-            fetchData();
-        }
-    };
-
-    // 修正開始ロジック
-    const handleEdit = (sale: Sale) => {
-        setEditingSaleId(sale.id);
-        setKeypadAmount(sale.amount);
-        
-        const paymentKey = paymentMethods.find(p => p.id === sale.payment_method_id)?.key || 'cash';
-        setKeypadPaymentMethod(paymentKey);
-        
-        setIsModalOpen(true);
+    // 内側の削除ボタンが親のクリックイベントを起動するのを防ぐ
+    const stopPropagationAndDelete = (e: React.MouseEvent, saleId: string) => {
+        e.stopPropagation();
+        handleDelete(saleId);
     };
 
     return (
-        <section className="mb-20 p-4 bg-gray-900 rounded-xl shadow-lg m-4">
-            <h2 className="text-xl font-bold mb-4 flex items-center text-gray-300">
-                <Clock size={20} className="mr-2 text-red-400" />
-                最新の売上履歴 (直近5件)
-            </h2>
+        <section className="mb-20 p-4">
+            <div className="flex justify-between items-center mb-4">
+                <h2 className="text-xl font-bold text-white">直近の売上履歴</h2>
+            </div>
+            
             <div className="space-y-3">
                 {sales.slice(0, 5).map(sale => {
                     const methodId = sale.payment_method_id;
                     const Icon = paymentMethodIconMap[methodId];
                     
                     return (
-                        <button
+                        // 【以前の修正箇所】外側の <button> を <div> に変更し、クリックイベントを付与
+                        <div
                             key={sale.id}
                             onClick={() => handleEdit(sale)} 
-                            className="w-full flex justify-between items-center text-sm text-gray-300 border-b border-gray-800 pb-2 hover:bg-gray-800 p-1 rounded transition"
+                            className="w-full flex justify-between items-center text-sm text-gray-300 border-b border-gray-800 pb-2 hover:bg-gray-800 p-1 rounded transition cursor-pointer" // cursor-pointerを追加
                         >
                             
                             <div className="flex flex-col text-left">
@@ -728,164 +590,277 @@ const LatestSalesHistory: React.FC<{
                             </span>
 
                             <button
-                                onClick={(e) => {
-                                    e.stopPropagation(); 
-                                    handleDelete(sale.id);
-                                }}
+                                onClick={(e) => stopPropagationAndDelete(e, sale.id)}
                                 className="text-red-500 hover:text-red-400 p-1 rounded transition ml-2 flex items-center text-xs"
                                 title="この売上を削除"
                             >
-                                削除
+                                <Trash2 size={16} />
                             </button>
-                        </button>
+                        </div>
                     );
                 })}
+                {sales.length === 0 && (
+                    <p className="text-center text-gray-500 py-4">まだ売上がありません。</p>
+                )}
             </div>
-            <Link href="/history" className="mt-4 block text-center text-sm text-yellow-500 hover:text-yellow-400">
-                すべての履歴を見る
+            
+            {/* 履歴画面へのリンク (以前の修正箇所) */}
+            <Link href="/history" className="mt-4 block text-center text-sm text-yellow-500 hover:text-yellow-400 flex items-center justify-center">
+                すべての履歴を見る <ChevronRight size={16} className="ml-1"/>
             </Link>
         </section>
     );
 };
 
 
-// ★★★ 新規コンポーネント: 月間サマリーカード ★★★
-const MonthlySummaryCard: React.FC<{
-    monthlySummary: { totalSales: number; rideCount: number; periodText: string };
-    monthlyTarget: number;
-    achievementPercentage: number;
-}> = ({ monthlySummary, monthlyTarget, achievementPercentage }) => (
-    <section className="p-4 bg-gray-700 text-white m-4 rounded-xl shadow-xl">
-        <h2 className="text-lg font-bold flex items-center mb-2 text-gray-200">
-            <Calendar size={20} className="mr-2 text-blue-400" />
-            月間売上 ({monthlySummary.periodText})
-        </h2>
-        <p className="text-4xl font-extrabold text-white">
-            ¥{monthlySummary.totalSales.toLocaleString()}
-        </p>
-
-        {monthlyTarget > 0 && (
-            <div className="mt-3">
-                {/* プログレスバー (月間) */}
-                <div className="w-full bg-gray-600 rounded-full h-2">
-                    <div 
-                        className="bg-green-500 h-2 rounded-full" 
-                        style={{ width: `${achievementPercentage}%` }}
-                    ></div>
-                </div>
-                {/* 達成率と目標金額 */}
-                <div className="flex justify-between text-xs text-gray-400 mt-1">
-                    <span className="font-semibold">{achievementPercentage}% 達成</span>
-                    <span>目標 ¥{monthlyTarget.toLocaleString()}</span>
-                </div>
-            </div>
-        )}
-        
-        <p className="text-sm text-gray-400 mt-2">
-            乗車: {monthlySummary.rideCount} 回
-        </p>
-    </section>
-);
-
-
-// ★★★ 新規コンポーネント: 月間目標設定モーダル ★★★
-const MonthlySettingsModal: React.FC<{
-    isOpen: boolean;
-    onClose: () => void;
-    currentClosingDay: number;
-    currentTarget: number;
-    setClosingDay: (day: number) => void;
-    setMonthlyTarget: (target: number) => void;
-    fetchData: (closingDay: number) => void;
-}> = ({ isOpen, onClose, currentClosingDay, currentTarget, setClosingDay, setMonthlyTarget, fetchData }) => {
-    
-    const [inputDay, setInputDay] = useState(String(currentClosingDay));
-    const [inputTarget, setInputTarget] = useState(String(currentTarget));
-
-    useEffect(() => {
-        // モーダルが開くときに値を同期
-        setInputDay(String(currentClosingDay));
-        setInputTarget(String(currentTarget));
-    }, [isOpen, currentClosingDay, currentTarget]);
-
-    const handleSave = () => {
-        const day = parseInt(inputDay);
-        const target = parseInt(inputTarget);
-
-        if (isNaN(day) || day < 1 || day > 31) {
-            alert("締め日を1〜31日（いずれか）で入力してください。");
-            return;
-        }
-
-        // 状態とLocal Storageを更新
-        localStorage.setItem(LOCAL_STORAGE_CLOSING_DAY_KEY, String(day));
-        localStorage.setItem(LOCAL_STORAGE_MONTHLY_TARGET_KEY, String(target));
-        setClosingDay(day);
-        setMonthlyTarget(target);
-
-        // 新しい設定でデータを再取得
-        fetchData(day);
-        onClose();
-    };
-
+// 汎用モーダルコンポーネント
+const Modal: React.FC<{ isOpen: boolean; onClose: () => void; children: React.ReactNode }> = ({ isOpen, onClose, children }) => {
     if (!isOpen) return null;
-
     return (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black bg-opacity-75 backdrop-blur-sm transition-opacity p-4">
-            <div className="bg-gray-800 rounded-xl w-full max-w-sm p-6 shadow-2xl transform transition-transform duration-300 translate-y-0 text-white">
-                
-                <h2 className="text-2xl font-bold mb-4 flex items-center">
-                    <Target size={24} className="mr-2 text-yellow-500" />
-                    月間目標設定
-                </h2>
-                
-                <div className="space-y-4">
-                    {/* 締め日設定 */}
-                    <div className="bg-gray-700 p-3 rounded-lg">
-                        <label className="block text-sm font-semibold mb-1 text-gray-300">
-                            月の締め日 (1〜31日)
-                        </label>
-                        <input
-                            type="number"
-                            value={inputDay}
-                            onChange={(e) => setInputDay(e.target.value)}
-                            min="1"
-                            max="31"
-                            placeholder="例: 25"
-                            className="w-full bg-transparent border-b border-gray-600 focus:border-yellow-500 outline-none text-xl p-1"
-                        />
-                    </div>
-                    
-                    {/* 月間目標金額設定 */}
-                    <div className="bg-gray-700 p-3 rounded-lg">
-                        <label className="block text-sm font-semibold mb-1 text-gray-300">
-                            月間目標金額 (¥)
-                        </label>
-                        <input
-                            type="number"
-                            value={inputTarget}
-                            onChange={(e) => setInputTarget(e.target.value)}
-                            placeholder="例: 600000"
-                            className="w-full bg-transparent border-b border-gray-600 focus:border-yellow-500 outline-none text-xl p-1"
-                        />
-                    </div>
-                </div>
-
-                <div className="flex justify-end space-x-3 mt-6">
-                    <button
-                        onClick={onClose}
-                        className="p-2 px-4 bg-gray-600 hover:bg-gray-500 rounded-lg font-bold transition"
-                    >
-                        キャンセル
-                    </button>
-                    <button
-                        onClick={handleSave}
-                        className="p-2 px-4 bg-yellow-500 hover:bg-yellow-400 text-black rounded-lg font-bold transition"
-                    >
-                        保存して更新
-                    </button>
-                </div>
+        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
+            <div className="bg-gray-900 p-6 rounded-xl shadow-2xl w-full max-w-sm relative">
+                <button onClick={onClose} className="absolute top-3 right-3 text-gray-400 hover:text-white transition">
+                    <X size={24} />
+                </button>
+                {children}
             </div>
         </div>
+    );
+};
+
+
+// 売上追加モーダル
+const AddSaleModal: React.FC<{
+    isOpen: boolean;
+    onClose: () => void;
+    onAdd: (amount: number, methodId: number) => void;
+}> = ({ isOpen, onClose, onAdd }) => {
+    const [amount, setAmount] = useState('');
+    const [methodId, setMethodId] = useState(PAYMENT_METHODS[0].id);
+
+    const handleSubmit = () => {
+        const parsedAmount = parseInt(amount, 10);
+        if (isNaN(parsedAmount) || parsedAmount <= 0) {
+            alert('金額を正しく入力してください。');
+            return;
+        }
+        onAdd(parsedAmount, methodId);
+        setAmount('');
+    };
+    
+    useEffect(() => {
+        if (!isOpen) {
+            setAmount('');
+            setMethodId(PAYMENT_METHODS[0].id);
+        }
+    }, [isOpen]);
+
+    return (
+        <Modal isOpen={isOpen} onClose={onClose}>
+            <h2 className="text-2xl font-bold mb-4 text-white">売上を記録</h2>
+            
+            <label className="block text-sm font-medium text-gray-400 mb-1">金額 (¥)</label>
+            <div className="flex items-center mb-4 bg-gray-800 p-3 rounded-lg">
+                <DollarSign size={20} className="text-green-400 mr-2" />
+                <input
+                    type="number"
+                    value={amount}
+                    onChange={(e) => setAmount(e.target.value)}
+                    placeholder="例: 1500"
+                    className="w-full bg-transparent text-white text-xl font-bold focus:outline-none"
+                    inputMode="numeric"
+                />
+            </div>
+            
+            <label className="block text-sm font-medium text-gray-400 mb-2">支払い方法</label>
+            <div className="grid grid-cols-2 gap-3 mb-6">
+                {PAYMENT_METHODS.map(method => (
+                    <button
+                        key={method.id}
+                        onClick={() => setMethodId(method.id)}
+                        className={`p-3 rounded-lg flex items-center justify-center text-sm font-semibold transition ${
+                            methodId === method.id 
+                                ? 'bg-yellow-500 text-black' 
+                                : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                        }`}
+                    >
+                        <method.icon size={18} className="mr-2"/>
+                        {method.name}
+                    </button>
+                ))}
+            </div>
+            
+            <button
+                onClick={handleSubmit}
+                className="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-3 rounded-lg flex items-center justify-center transition"
+            >
+                <Check size={20} className="mr-2"/>
+                記録を確定
+            </button>
+        </Modal>
+    );
+};
+
+// 売上編集モーダル
+const EditSaleModal: React.FC<{
+    isOpen: boolean;
+    onClose: () => void;
+    onEdit: (saleId: string, newAmount: number, newMethodId: number) => void;
+    sale: Sale | null;
+}> = ({ isOpen, onClose, onEdit, sale }) => {
+    const [amount, setAmount] = useState('');
+    const [methodId, setMethodId] = useState(PAYMENT_METHODS[0].id);
+
+    useEffect(() => {
+        if (sale) {
+            setAmount(sale.amount.toString());
+            setMethodId(sale.payment_method_id);
+        }
+    }, [sale]);
+
+    const handleSubmit = () => {
+        if (!sale) return;
+        const parsedAmount = parseInt(amount, 10);
+        if (isNaN(parsedAmount) || parsedAmount <= 0) {
+            alert('金額を正しく入力してください。');
+            return;
+        }
+        onEdit(sale.id, parsedAmount, methodId);
+    };
+
+    return (
+        <Modal isOpen={isOpen} onClose={onClose}>
+            <h2 className="text-2xl font-bold mb-4 text-white flex items-center">
+                <Pencil size={24} className="mr-2 text-yellow-500"/>
+                売上を編集
+            </h2>
+            <p className="text-sm text-gray-400 mb-4">売上ID: {sale?.id.substring(0, 8)}...</p>
+
+            <label className="block text-sm font-medium text-gray-400 mb-1">金額 (¥)</label>
+            <div className="flex items-center mb-4 bg-gray-800 p-3 rounded-lg">
+                <DollarSign size={20} className="text-green-400 mr-2" />
+                <input
+                    type="number"
+                    value={amount}
+                    onChange={(e) => setAmount(e.target.value)}
+                    placeholder="例: 1500"
+                    className="w-full bg-transparent text-white text-xl font-bold focus:outline-none"
+                    inputMode="numeric"
+                />
+            </div>
+            
+            <label className="block text-sm font-medium text-gray-400 mb-2">支払い方法</label>
+            <div className="grid grid-cols-2 gap-3 mb-6">
+                {PAYMENT_METHODS.map(method => (
+                    <button
+                        key={method.id}
+                        onClick={() => setMethodId(method.id)}
+                        className={`p-3 rounded-lg flex items-center justify-center text-sm font-semibold transition ${
+                            methodId === method.id 
+                                ? 'bg-yellow-500 text-black' 
+                                : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                        }`}
+                    >
+                        <method.icon size={18} className="mr-2"/>
+                        {method.name}
+                    </button>
+                ))}
+            </div>
+            
+            <button
+                onClick={handleSubmit}
+                className="w-full bg-yellow-500 hover:bg-yellow-600 text-black font-bold py-3 rounded-lg flex items-center justify-center transition"
+            >
+                <Check size={20} className="mr-2"/>
+                変更を保存
+            </button>
+        </Modal>
+    );
+};
+
+
+// 売上削除確認モーダル
+const DeleteSaleModal: React.FC<{
+    isOpen: boolean;
+    onClose: () => void;
+    onDelete: () => void;
+    sale: Sale | null;
+}> = ({ isOpen, onClose, onDelete, sale }) => {
+    return (
+        <Modal isOpen={isOpen} onClose={onClose}>
+            <h2 className="text-2xl font-bold mb-4 text-red-500 flex items-center">
+                <Trash2 size={24} className="mr-2"/>
+                売上削除の確認
+            </h2>
+            <p className="text-white mb-6">
+                以下の売上記録を削除します。よろしいですか？
+            </p>
+            <div className="bg-gray-800 p-3 rounded-lg mb-6">
+                <p className="text-xl font-bold text-yellow-500">¥{sale?.amount.toLocaleString()}</p>
+                <p className="text-sm text-gray-400">{paymentMethodNameMap[sale?.payment_method_id ?? 1]}</p>
+                <p className="text-xs text-gray-500">{new Date(sale?.created_at ?? '').toLocaleString()}</p>
+            </div>
+
+            <div className="flex justify-between space-x-3">
+                <button
+                    onClick={onClose}
+                    className="w-1/2 bg-gray-700 hover:bg-gray-600 text-white font-bold py-3 rounded-lg transition"
+                >
+                    キャンセル
+                </button>
+                <button
+                    onClick={onDelete}
+                    className="w-1/2 bg-red-600 hover:bg-red-700 text-white font-bold py-3 rounded-lg transition flex items-center justify-center"
+                >
+                    <Trash2 size={20} className="mr-2"/>
+                    削除を確定
+                </button>
+            </div>
+        </Modal>
+    );
+};
+
+// シフト終了モーダル
+const EndShiftModal: React.FC<{
+    isOpen: boolean;
+    onClose: () => void;
+    onEnd: () => void;
+    summary: ShiftSummary;
+}> = ({ isOpen, onClose, onEnd, summary }) => {
+    return (
+        <Modal isOpen={isOpen} onClose={onClose}>
+            <h2 className="text-2xl font-bold mb-4 text-white flex items-center">
+                <Clock size={24} className="mr-2 text-red-500"/>
+                シフトを終了しますか？
+            </h2>
+            <p className="text-gray-400 mb-6">
+                本日の稼働を終了し、結果を記録します。
+            </p>
+
+            <div className="bg-gray-800 p-4 rounded-xl mb-6">
+                <p className="text-sm text-gray-400 mb-1">最終総売上</p>
+                <p className="text-3xl font-extrabold text-yellow-500 mb-3">¥{summary.totalSales.toLocaleString()}</p>
+                <div className="flex justify-between text-sm text-gray-300">
+                    <p>乗車回数: {summary.rideCount} 回</p>
+                    <p>平均単価: ¥{summary.avgFare.toLocaleString()}</p>
+                </div>
+            </div>
+
+            <div className="flex justify-between space-x-3">
+                <button
+                    onClick={onClose}
+                    className="w-1/2 bg-gray-700 hover:bg-gray-600 text-white font-bold py-3 rounded-lg transition"
+                >
+                    キャンセル
+                </button>
+                <button
+                    onClick={onEnd}
+                    className="w-1/2 bg-red-600 hover:bg-red-700 text-white font-bold py-3 rounded-lg transition flex items-center justify-center"
+                >
+                    <Check size={20} className="mr-2"/>
+                    終了を確定
+                </button>
+            </div>
+        </Modal>
     );
 };
