@@ -111,7 +111,9 @@ export const SalesCharts: React.FC<ChartProps> = ({ shifts }) => {
                                 outerRadius={100}
                                 fill="#8884d8"
                                 labelLine={false}
-                                label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                                // ★★★ TypeScriptエラー修正箇所 ★★★
+                                label={({ name, percent }) => `${name}: ${percent !== undefined ? (percent * 100).toFixed(0) : '0'}%`}
+                                // ★★★ 修正箇所ここまで ★★★
                             >
                                 {paymentData.map((entry, index) => (
                                     <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
