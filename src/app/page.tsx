@@ -3,7 +3,8 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { supabase } from '../../utils/supabase';
+// 【修正1】supabaseを直接インポートするのではなく、getSupabaseClient関数をインポート
+import { getSupabaseClient } from '../../utils/supabase';
 import { DollarSign, Clock, Target, Plus, RefreshCw, BarChart, Smartphone, CreditCard, Tag, CarTaxiFront, TrendingUp, Calendar } from 'lucide-react'; 
 import Link from 'next/link';
 
@@ -119,6 +120,9 @@ export default function Home() {
     const [monthlySummary, setMonthlySummary] = useState<{ totalSales: number, rideCount: number, periodText: string }>({ totalSales: 0, rideCount: 0, periodText: '' });
     const [isMonthlySettingsModalOpen, setIsMonthlySettingsModalOpen] = useState(false);
 
+    // 【修正2】getSupabaseClient() を呼び出してクライアントインスタンスを取得
+    const supabase = getSupabaseClient();
+
     // 設定の読み込み
     useEffect(() => {
         const storedClosingDay = localStorage.getItem(LOCAL_STORAGE_CLOSING_DAY_KEY);
@@ -159,6 +163,13 @@ export default function Home() {
     // ★★★ 修正ポイント: fetchData を最初に定義する (依存関係の解消) ★★★
     const fetchData = useCallback(async (closingDay: number | null = monthlyClosingDay) => {
         setIsLoading(true);
+
+        // 【修正3】supabaseのnullチェック
+        if (!supabase) {
+            console.error("Supabase client is not available (Missing ENV or during SSR).");
+            setIsLoading(false);
+            return;
+        }
 
         // 1. アクティブなシフトのデータを取得
         const { data: shiftData, error: shiftError } = await supabase
@@ -231,7 +242,7 @@ export default function Home() {
         }
 
         setIsLoading(false);
-    }, [monthlyClosingDay]);
+    }, [monthlyClosingDay, supabase]); // 依存関係にsupabaseを追加
 
     // monthlyClosingDay が設定されたらデータを取得
     useEffect(() => {
@@ -244,6 +255,12 @@ export default function Home() {
     // シフト開始ロジック
     const startShift = useCallback(async () => {
         if (currentShift) return;
+
+        // 【修正4】supabaseのnullチェック (startShift)
+        if (!supabase) {
+            alert('シフト開始に失敗しました。: データベース接続エラー');
+            return;
+        }
 
         const target = parseInt(targetInput) || 30000;
         
@@ -260,11 +277,17 @@ export default function Home() {
             setCurrentShift(data as Shift);
             setSales([]);
         }
-    }, [currentShift, targetInput]);
+    }, [currentShift, targetInput, supabase]); // 依存関係にsupabaseを追加
 
     // シフト終了ロジック
     const endShift = useCallback(async () => {
         if (!currentShift) return;
+
+        // 【修正5】supabaseのnullチェック (endShift)
+        if (!supabase) {
+            alert('シフト終了に失敗しました。: データベース接続エラー');
+            return;
+        }
 
         const confirmEnd = window.confirm(`総売上 ¥${shiftSummary.totalSales.toLocaleString()} でシフトを終了しますか？`);
         if (!confirmEnd) return;
@@ -283,7 +306,7 @@ export default function Home() {
             // fetchDataを呼び出し可能
             if (monthlyClosingDay) fetchData(monthlyClosingDay);
         }
-    }, [currentShift, shiftSummary.totalSales, monthlyClosingDay, fetchData]);
+    }, [currentShift, shiftSummary.totalSales, monthlyClosingDay, fetchData, supabase]); // 依存関係にsupabaseを追加
 
 
     // 目標達成率の計算 (シフトごと)
@@ -333,6 +356,12 @@ export default function Home() {
     const handleRegisterSale = useCallback(async () => {
         if (!currentShift || keypadAmount === '' || keypadAmount === 0 || isRegistering) return;
         
+        // 【修正6】supabaseのnullチェック (handleRegisterSale)
+        if (!supabase) {
+            alert('売上処理エラー: データベース接続エラー');
+            return;
+        }
+
         setIsRegistering(true);
         const amount = Number(keypadAmount);
         const methodId = paymentMethodMap[keypadPaymentMethod];
@@ -377,7 +406,7 @@ export default function Home() {
             setKeypadAmount('');
             fetchData(); // データリフレッシュ
         }
-    }, [currentShift, keypadAmount, keypadPaymentMethod, editingSaleId, isRegistering, fetchData]);
+    }, [currentShift, keypadAmount, keypadPaymentMethod, editingSaleId, isRegistering, fetchData, supabase]); // 依存関係にsupabaseを追加
 
 
     // ローディング画面
@@ -631,6 +660,13 @@ const LatestSalesHistory: React.FC<{
     
     // 売上削除ロジック
     const handleDelete = async (saleId: string) => {
+        // 【修正7】supabaseのnullチェック (handleDelete)
+        const supabase = getSupabaseClient();
+        if (!supabase) {
+            alert('売上削除に失敗しました。: データベース接続エラー');
+            return;
+        }
+
         if (!window.confirm("この売上を削除してもよろしいですか？\n元に戻すことはできません。")) {
             return;
         }
@@ -705,7 +741,7 @@ const LatestSalesHistory: React.FC<{
                     );
                 })}
             </div>
-            <Link href="/analysis" className="mt-4 block text-center text-sm text-yellow-500 hover:text-yellow-400">
+            <Link href="/history" className="mt-4 block text-center text-sm text-yellow-500 hover:text-yellow-400">
                 すべての履歴を見る
             </Link>
         </section>
@@ -777,7 +813,7 @@ const MonthlySettingsModal: React.FC<{
         const target = parseInt(inputTarget);
 
         if (isNaN(day) || day < 1 || day > 31) {
-            alert("締め日を1〜31の間で入力してください。");
+            alert("締め日を1〜31日（いずれか）で入力してください。");
             return;
         }
 
