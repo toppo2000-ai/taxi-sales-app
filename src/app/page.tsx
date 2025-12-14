@@ -23,7 +23,9 @@ import {
     CreditCard,
     Smartphone,
     Ticket,
-    Wallet
+    Wallet,
+    // 【修正箇所】: ListChecks を追加
+    ListChecks 
 } from 'lucide-react';
 
 // =================================================================
@@ -297,10 +299,10 @@ export default function Home() {
     }, [currentShift, shiftSummary.totalSales]);
 
     // 月間サマリー計算
-    // 【修正箇所】: number 型を明示的に指定
+    // 【以前の修正箇所】: number 型を明示的に指定してTSエラーを解消
     const monthlyTarget: number = 600000; // 例として固定値
     const monthlyAchievementPercentage = useMemo(() => {
-        if (monthlyTarget === 0) return 0 // monthlyTarget が number 型になったため、この比較はエラーにならない
+        if (monthlyTarget === 0) return 0 
         return Math.min(100, Math.round((monthlySummary.totalSales / monthlyTarget) * 100));
     }, [monthlySummary.totalSales, monthlyTarget]);
 
@@ -350,7 +352,7 @@ export default function Home() {
 
             {/* シフト管理セクション */}
             {currentShift ? (
-                // m-4 (マージン) と rounded-xl (角丸) を適用
+                // 【以前の修正箇所】: m-4 (マージン) と rounded-xl (角丸) を適用
                 <section className="m-4 p-4 bg-gray-800 text-white shadow-xl rounded-xl"> 
                     
                     {/* 営業中ステータスと時刻 */}
@@ -392,6 +394,7 @@ export default function Home() {
 
                     {/* 乗車回数と平均単価のカード */}
                     <div className="grid grid-cols-2 gap-4 mb-8">
+                        {/* ListChecks アイコンが正しく使われています */}
                         <StatCard icon={ListChecks} label="乗車回数" value={`${shiftSummary.rideCount} 回`} color="text-blue-400"/>
                         <StatCard icon={DollarSign} label="平均単価" value={`¥${shiftSummary.avgFare.toLocaleString()}`} color="text-red-400"/>
                     </div>
@@ -478,7 +481,7 @@ const ShiftSetupCard: React.FC<{
 }> = ({ targetInput, setTargetInput, startShift }) => (
     <>
         <h2 className="text-xl font-bold mb-3 flex items-center">
-            <CarTaxiFront size={24} className="mr-2" style={{ color: '#FCD34D' }} />
+            <CarTaxiFront size={24} className="mr-2 text-yellow-500" />
             シフトを開始する
         </h2>
         <p className="text-sm text-gray-400 mb-4">本日の目標金額を設定してください。</p>
