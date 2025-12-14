@@ -297,9 +297,10 @@ export default function Home() {
     }, [currentShift, shiftSummary.totalSales]);
 
     // 月間サマリー計算
-    const monthlyTarget = 600000; // 例として固定値
+    // 【修正箇所】: number 型を明示的に指定
+    const monthlyTarget: number = 600000; // 例として固定値
     const monthlyAchievementPercentage = useMemo(() => {
-        if (monthlyTarget === 0) return 0;
+        if (monthlyTarget === 0) return 0 // monthlyTarget が number 型になったため、この比較はエラーにならない
         return Math.min(100, Math.round((monthlySummary.totalSales / monthlyTarget) * 100));
     }, [monthlySummary.totalSales, monthlyTarget]);
 
@@ -347,9 +348,9 @@ export default function Home() {
                 monthRange={monthRange}
             />
 
-            {/* ★★★ シフト管理セクション (修正適用済み) ★★★ */}
+            {/* シフト管理セクション */}
             {currentShift ? (
-                // m-4 (マージン) と rounded-xl (角丸) を追加
+                // m-4 (マージン) と rounded-xl (角丸) を適用
                 <section className="m-4 p-4 bg-gray-800 text-white shadow-xl rounded-xl"> 
                     
                     {/* 営業中ステータスと時刻 */}
@@ -477,7 +478,7 @@ const ShiftSetupCard: React.FC<{
 }> = ({ targetInput, setTargetInput, startShift }) => (
     <>
         <h2 className="text-xl font-bold mb-3 flex items-center">
-            <CarTaxiFront size={24} className="mr-2 text-yellow-500" />
+            <CarTaxiFront size={24} className="mr-2" style={{ color: '#FCD34D' }} />
             シフトを開始する
         </h2>
         <p className="text-sm text-gray-400 mb-4">本日の目標金額を設定してください。</p>
@@ -490,6 +491,7 @@ const ShiftSetupCard: React.FC<{
                 onChange={(e) => setTargetInput(e.target.value)}
                 placeholder="目標金額 (例: 30000)"
                 className="w-full bg-transparent text-white text-xl font-bold focus:outline-none"
+                inputMode="numeric"
             />
         </div>
         <button
@@ -568,11 +570,10 @@ const LatestSalesHistory: React.FC<{
                     const Icon = paymentMethodIconMap[methodId];
                     
                     return (
-                        // 【以前の修正箇所】外側の <button> を <div> に変更し、クリックイベントを付与
                         <div
                             key={sale.id}
                             onClick={() => handleEdit(sale)} 
-                            className="w-full flex justify-between items-center text-sm text-gray-300 border-b border-gray-800 pb-2 hover:bg-gray-800 p-1 rounded transition cursor-pointer" // cursor-pointerを追加
+                            className="w-full flex justify-between items-center text-sm text-gray-300 border-b border-gray-800 pb-2 hover:bg-gray-800 p-1 rounded transition cursor-pointer"
                         >
                             
                             <div className="flex flex-col text-left">
@@ -604,7 +605,7 @@ const LatestSalesHistory: React.FC<{
                 )}
             </div>
             
-            {/* 履歴画面へのリンク (以前の修正箇所) */}
+            {/* 履歴画面へのリンク */}
             <Link href="/history" className="mt-4 block text-center text-sm text-yellow-500 hover:text-yellow-400 flex items-center justify-center">
                 すべての履歴を見る <ChevronRight size={16} className="ml-1"/>
             </Link>
