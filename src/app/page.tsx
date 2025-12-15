@@ -98,7 +98,7 @@ export default function Home() {
     const [monthlySummary, setMonthlySummary] = useState<MonthlySummary>({ totalSales: 0, totalRides: 0 });
     
     // ★ 修正点1: 月間目標値をStateとして管理
-    const [monthlyTargetValue, setMonthlyTargetValue] = useState<number>(600000); 
+    const [monthlyTargetValue, setMonthlyTargetValue] = useState<number>(1000000); 
 
     // モーダル管理
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
